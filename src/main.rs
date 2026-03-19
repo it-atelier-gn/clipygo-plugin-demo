@@ -108,7 +108,10 @@ mod tests {
         assert_eq!(targets[0]["id"], "demo-target-1");
         assert_eq!(targets[1]["id"], "demo-target-2");
         for t in targets {
-            assert!(t["formats"].as_array().unwrap().contains(&serde_json::json!("text")));
+            assert!(t["formats"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("text")));
         }
     }
 
