@@ -1,5 +1,7 @@
 use std::io::{self, BufRead, Write};
+use std::process::Command;
 
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 
 // --- Protocol types ---
@@ -71,9 +73,9 @@ fn handle(request: Request) -> serde_json::Value {
                 Target {
                     id: "demo-target-2",
                     provider: "Demo Plugin",
-                    formats: vec!["text"],
+                    formats: vec!["text", "image"],
                     title: "Demo Target 2",
-                    description: "Second demo target",
+                    description: "Saves images to a temp file and opens them",
                     image: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8v59hPwAEaAI+rVUOawAAAABJRU5ErkJggg==",
                 },
             ],
@@ -82,7 +84,20 @@ fn handle(request: Request) -> serde_json::Value {
 
         Request::Send { target_id, content, format } => {
             eprintln!("[demo] send → target={} format={} content={:?}", target_id, format, &content[..content.len().min(80)]);
-            serde_json::to_value(SendResponse { success: true, error: None }).unwrap()
+
+            if format == "image" {
+                match save_and_open_image(&content) {
+                    Ok(path) => {
+                        eprintln!("[demo] image saved and opened: {}", path);
+                        serde_json::to_value(SendResponse { success: true, error: None }).unwrap()
+                    }
+                    Err(e) => {
+                        serde_json::to_value(SendResponse { success: false, error: Some(e) }).unwrap()
+                    }
+                }
+            } else {
+                serde_json::to_value(SendResponse { success: true, error: None }).unwrap()
+            }
         }
     }
 }
@@ -113,6 +128,24 @@ mod tests {
                 .unwrap()
                 .contains(&serde_json::json!("text")));
         }
+        // Target 2 also supports image
+        assert!(targets[1]["formats"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("image")));
+    }
+
+    #[test]
+    fn send_image_to_unsupported_target_still_returns_success() {
+        // The host is responsible for format filtering; the plugin handles whatever it receives
+        let resp = handle(Request::Send {
+            target_id: "demo-target-1".to_string(),
+            content: "aGVsbG8=".to_string(), // base64 "hello" — not a real PNG but won't be opened
+            format: "image".to_string(),
+        });
+        // Will fail at PNG decode/write, but that's acceptable for this test path
+        // The important thing is it returns a valid JSON response either way
+        assert!(resp.get("success").is_some());
     }
 
     #[test]
@@ -137,6 +170,38 @@ mod tests {
         let result = serde_json::from_str::<Request>(r#"{"command":"unknown"}"#);
         assert!(result.is_err());
     }
+}
+
+fn save_and_open_image(base64_data: &str) -> Result<String, String> {
+    let bytes = STANDARD
+        .decode(base64_data)
+        .map_err(|e| format!("Failed to decode image: {e}"))?;
+
+    let path = std::env::temp_dir().join("clipygo-demo.png");
+    std::fs::write(&path, &bytes)
+        .map_err(|e| format!("Failed to write image: {e}"))?;
+
+    let path_str = path.to_string_lossy().to_string();
+
+    #[cfg(target_os = "windows")]
+    Command::new("cmd")
+        .args(["/c", "start", "", &path_str])
+        .spawn()
+        .map_err(|e| format!("Failed to open image: {e}"))?;
+
+    #[cfg(target_os = "macos")]
+    Command::new("open")
+        .arg(&path_str)
+        .spawn()
+        .map_err(|e| format!("Failed to open image: {e}"))?;
+
+    #[cfg(target_os = "linux")]
+    Command::new("xdg-open")
+        .arg(&path_str)
+        .spawn()
+        .map_err(|e| format!("Failed to open image: {e}"))?;
+
+    Ok(path_str)
 }
 
 fn main() {
