@@ -1,7 +1,7 @@
 use std::io::{self, BufRead, Write};
 use std::process::Command;
 
-use base64::{Engine, engine::general_purpose::STANDARD};
+use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 
 // --- Protocol types ---
@@ -178,8 +178,7 @@ fn save_and_open_image(base64_data: &str) -> Result<String, String> {
         .map_err(|e| format!("Failed to decode image: {e}"))?;
 
     let path = std::env::temp_dir().join("clipygo-demo.png");
-    std::fs::write(&path, &bytes)
-        .map_err(|e| format!("Failed to write image: {e}"))?;
+    std::fs::write(&path, &bytes).map_err(|e| format!("Failed to write image: {e}"))?;
 
     let path_str = path.to_string_lossy().to_string();
 
