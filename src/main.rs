@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 enum Request {
     GetInfo,
     GetTargets,
+    GetConfigSchema,
+    SetConfig { values: serde_json::Value },
     Send {
         target_id: String,
         content: String,
@@ -48,6 +50,31 @@ struct SendResponse {
     error: Option<String>,
 }
 
+// --- Config ---
+
+use std::sync::Mutex;
+
+static CONFIG: Mutex<Option<DemoConfig>> = Mutex::new(None);
+
+#[derive(Clone)]
+struct DemoConfig {
+    greeting: String,
+    verbose: bool,
+}
+
+impl Default for DemoConfig {
+    fn default() -> Self {
+        Self {
+            greeting: "Received!".to_string(),
+            verbose: false,
+        }
+    }
+}
+
+fn get_config() -> DemoConfig {
+    CONFIG.lock().unwrap().clone().unwrap_or_default()
+}
+
 // --- Handlers ---
 
 fn handle(request: Request) -> serde_json::Value {
@@ -82,8 +109,52 @@ fn handle(request: Request) -> serde_json::Value {
         })
         .unwrap(),
 
+        Request::GetConfigSchema => {
+            let config = get_config();
+            serde_json::json!({
+                "schema": {
+                    "type": "object",
+                    "title": "Demo Plugin",
+                    "properties": {
+                        "greeting": {
+                            "type": "string",
+                            "title": "Greeting Message",
+                            "description": "Message logged when content is sent to a target",
+                            "default": "Received!"
+                        },
+                        "verbose": {
+                            "type": "boolean",
+                            "title": "Verbose Logging",
+                            "description": "Log full content to stderr (not just a preview)"
+                        }
+                    }
+                },
+                "values": {
+                    "greeting": config.greeting,
+                    "verbose": config.verbose
+                }
+            })
+        }
+
+        Request::SetConfig { values } => {
+            let mut config = get_config();
+            if let Some(v) = values.get("greeting").and_then(|v| v.as_str()) {
+                config.greeting = v.to_string();
+            }
+            if let Some(v) = values.get("verbose").and_then(|v| v.as_bool()) {
+                config.verbose = v;
+            }
+            *CONFIG.lock().unwrap() = Some(config);
+            serde_json::to_value(SendResponse { success: true, error: None }).unwrap()
+        }
+
         Request::Send { target_id, content, format } => {
-            eprintln!("[demo] send → target={} format={} content={:?}", target_id, format, &content[..content.len().min(80)]);
+            let config = get_config();
+            if config.verbose {
+                eprintln!("[demo] {} → target={} format={} content={:?}", config.greeting, target_id, format, content);
+            } else {
+                eprintln!("[demo] {} → target={} format={} content={:?}", config.greeting, target_id, format, &content[..content.len().min(80)]);
+            }
 
             if format == "image" {
                 match save_and_open_image(&content) {
@@ -157,6 +228,32 @@ mod tests {
         });
         assert_eq!(resp["success"], true);
         assert!(resp.get("error").is_none());
+    }
+
+    #[test]
+    fn get_config_schema_returns_schema_and_values() {
+        let resp = handle(Request::GetConfigSchema);
+        assert!(resp.get("schema").is_some());
+        assert!(resp.get("values").is_some());
+        let props = &resp["schema"]["properties"];
+        assert!(props.get("greeting").is_some());
+        assert!(props.get("verbose").is_some());
+    }
+
+    #[test]
+    fn set_config_updates_values() {
+        let resp = handle(Request::SetConfig {
+            values: serde_json::json!({
+                "greeting": "Hello!",
+                "verbose": true
+            }),
+        });
+        assert_eq!(resp["success"], true);
+
+        // Verify the schema now returns updated values
+        let schema_resp = handle(Request::GetConfigSchema);
+        assert_eq!(schema_resp["values"]["greeting"], "Hello!");
+        assert_eq!(schema_resp["values"]["verbose"], true);
     }
 
     #[test]
