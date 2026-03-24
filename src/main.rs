@@ -12,7 +12,9 @@ enum Request {
     GetInfo,
     GetTargets,
     GetConfigSchema,
-    SetConfig { values: serde_json::Value },
+    SetConfig {
+        values: serde_json::Value,
+    },
     Send {
         target_id: String,
         content: String,
