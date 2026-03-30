@@ -4,7 +4,7 @@ A demo subprocess target provider plugin for [clipygo](https://github.com/it-ate
 
 ## What it does
 
-This plugin exposes two dummy targets (`Demo Target 1`, `Demo Target 2`). When clipygo sends content to one of them, the plugin logs it to stderr and responds with `success: true`. It also demonstrates the optional configuration protocol, letting users adjust settings through clipygo's plugin config UI. It serves as a minimal working reference implementation of the clipygo plugin protocol.
+This plugin exposes two dummy targets (`Demo Target 1`, `Demo Target 2`). When clipygo sends content to one of them, the plugin logs it to stderr and responds with `success: true`. It also demonstrates the optional configuration protocol (including setup instructions and a link to this repo), letting users adjust settings through clipygo's plugin config UI. It serves as a minimal working reference implementation of the clipygo plugin protocol.
 
 ## Plugin protocol
 
@@ -27,7 +27,7 @@ Plugins communicate with clipygo over **stdin/stdout** using newline-delimited J
 {"command":"send","target_id":"demo-target-1","content":"Hello world","format":"text"}
 ```
 
-**`get_config_schema`** *(optional)* — return a JSON Schema describing the plugin's configurable settings, along with current values:
+**`get_config_schema`** *(optional)* — return a JSON Schema describing the plugin's configurable settings, along with current values and setup instructions:
 ```json
 {"command":"get_config_schema"}
 ```
@@ -43,8 +43,10 @@ Each response is a single JSON object on one line.
 
 **`get_info` response:**
 ```json
-{"name":"Demo Plugin","version":"1.0.0","description":"...","author":"..."}
+{"name":"Demo Plugin","version":"1.3.0","description":"...","author":"...","link":"https://github.com/..."}
 ```
+
+The optional `link` field provides a URL (e.g. repo page) shown next to the plugin name in settings.
 
 **`get_targets` response:**
 ```json
@@ -75,6 +77,7 @@ On error:
 **`get_config_schema` response:**
 ```json
 {
+  "instructions": "Plain-text setup instructions shown above the config fields.",
   "schema": {
     "type": "object",
     "title": "Demo Plugin",
@@ -99,12 +102,14 @@ On error:
 }
 ```
 
+The optional `instructions` field is displayed above the config fields in the settings UI.
+
 **`set_config` response:**
 ```json
 {"success":true}
 ```
 
-Supported property types: `string`, `boolean`. Strings with `"format": "password"` render as password fields. Properties with `"enum"` render as dropdowns.
+Supported property types: `string`, `boolean`. Strings with `"format": "password"` render as password fields. Properties with `"enum"` render as dropdowns. Properties with `"visibleIf"` are conditionally shown based on another field's value.
 
 ## Building
 

@@ -28,6 +28,8 @@ struct InfoResponse {
     version: &'static str,
     description: &'static str,
     author: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    link: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -83,9 +85,10 @@ fn handle(request: Request) -> serde_json::Value {
     match request {
         Request::GetInfo => serde_json::to_value(InfoResponse {
             name: "Demo Plugin",
-            version: "1.0.0",
+            version: env!("CARGO_PKG_VERSION"),
             description: "Demo subprocess target provider for clipygo",
             author: "clipygo",
+            link: Some("https://github.com/it-atelier-gn/clipygo-plugin-demo"),
         })
         .unwrap(),
 
@@ -114,6 +117,9 @@ fn handle(request: Request) -> serde_json::Value {
         Request::GetConfigSchema => {
             let config = get_config();
             serde_json::json!({
+                "instructions": "This is a demo plugin for testing the clipygo plugin system.\n\
+                    It provides two dummy targets that log received content to stderr.\n\
+                    Configure the greeting message and verbosity below.",
                 "schema": {
                     "type": "object",
                     "title": "Demo Plugin",
@@ -161,7 +167,7 @@ fn handle(request: Request) -> serde_json::Value {
             if format == "image" {
                 match save_and_open_image(&content) {
                     Ok(path) => {
-                        eprintln!("[demo] image saved and opened: {}", path);
+                        eprintln!("[demo] image saved and opened: {path}");
                         serde_json::to_value(SendResponse { success: true, error: None }).unwrap()
                     }
                     Err(e) => {
@@ -183,9 +189,10 @@ mod tests {
     fn get_info_returns_name_and_version() {
         let resp = handle(Request::GetInfo);
         assert_eq!(resp["name"], "Demo Plugin");
-        assert_eq!(resp["version"], "1.0.0");
+        assert!(resp["version"].is_string());
         assert!(resp["description"].is_string());
         assert!(resp["author"].is_string());
+        assert!(resp["link"].is_string());
     }
 
     #[test]
@@ -318,7 +325,7 @@ fn main() {
             Err(e) => serde_json::json!({ "error": format!("Bad request: {}", e) }),
         };
 
-        let _ = writeln!(out, "{}", response);
+        let _ = writeln!(out, "{response}");
         let _ = out.flush();
     }
 }
