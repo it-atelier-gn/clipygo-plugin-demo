@@ -1,5 +1,9 @@
 # clipygo-plugin-demo
 
+[![Build](https://github.com/it-atelier-gn/clipygo-plugin-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/it-atelier-gn/clipygo-plugin-demo/actions)
+[![Rust](https://img.shields.io/badge/rust-1.80%2B-orange?logo=rust)](https://www.rust-lang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A demo subprocess target provider plugin for [clipygo](https://github.com/it-atelier-gn/clipygo).
 
 ## What it does
