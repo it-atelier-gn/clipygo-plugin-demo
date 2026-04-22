@@ -181,6 +181,58 @@ fn handle(request: Request) -> serde_json::Value {
     }
 }
 
+fn save_and_open_image(base64_data: &str) -> Result<String, String> {
+    let bytes = STANDARD
+        .decode(base64_data)
+        .map_err(|e| format!("Failed to decode image: {e}"))?;
+
+    let path = std::env::temp_dir().join("clipygo-demo.png");
+    std::fs::write(&path, &bytes).map_err(|e| format!("Failed to write image: {e}"))?;
+
+    let path_str = path.to_string_lossy().to_string();
+
+    #[cfg(target_os = "windows")]
+    Command::new("cmd")
+        .args(["/c", "start", "", &path_str])
+        .spawn()
+        .map_err(|e| format!("Failed to open image: {e}"))?;
+
+    #[cfg(target_os = "macos")]
+    Command::new("open")
+        .arg(&path_str)
+        .spawn()
+        .map_err(|e| format!("Failed to open image: {e}"))?;
+
+    #[cfg(target_os = "linux")]
+    Command::new("xdg-open")
+        .arg(&path_str)
+        .spawn()
+        .map_err(|e| format!("Failed to open image: {e}"))?;
+
+    Ok(path_str)
+}
+
+fn main() {
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+
+    for line in stdin.lock().lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+
+        let response = match serde_json::from_str::<Request>(&line) {
+            Ok(request) => handle(request),
+            Err(e) => serde_json::json!({ "error": format!("Bad request: {}", e) }),
+        };
+
+        let _ = writeln!(out, "{response}");
+        let _ = out.flush();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,57 +327,5 @@ mod tests {
     fn unknown_command_produces_error_field() {
         let result = serde_json::from_str::<Request>(r#"{"command":"unknown"}"#);
         assert!(result.is_err());
-    }
-}
-
-fn save_and_open_image(base64_data: &str) -> Result<String, String> {
-    let bytes = STANDARD
-        .decode(base64_data)
-        .map_err(|e| format!("Failed to decode image: {e}"))?;
-
-    let path = std::env::temp_dir().join("clipygo-demo.png");
-    std::fs::write(&path, &bytes).map_err(|e| format!("Failed to write image: {e}"))?;
-
-    let path_str = path.to_string_lossy().to_string();
-
-    #[cfg(target_os = "windows")]
-    Command::new("cmd")
-        .args(["/c", "start", "", &path_str])
-        .spawn()
-        .map_err(|e| format!("Failed to open image: {e}"))?;
-
-    #[cfg(target_os = "macos")]
-    Command::new("open")
-        .arg(&path_str)
-        .spawn()
-        .map_err(|e| format!("Failed to open image: {e}"))?;
-
-    #[cfg(target_os = "linux")]
-    Command::new("xdg-open")
-        .arg(&path_str)
-        .spawn()
-        .map_err(|e| format!("Failed to open image: {e}"))?;
-
-    Ok(path_str)
-}
-
-fn main() {
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
-        };
-
-        let response = match serde_json::from_str::<Request>(&line) {
-            Ok(request) => handle(request),
-            Err(e) => serde_json::json!({ "error": format!("Bad request: {}", e) }),
-        };
-
-        let _ = writeln!(out, "{response}");
-        let _ = out.flush();
     }
 }
