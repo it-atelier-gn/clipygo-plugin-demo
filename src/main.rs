@@ -110,6 +110,22 @@ fn handle(request: Request) -> serde_json::Value {
                     description: "Saves images to a temp file and opens them",
                     image: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8v59hPwAEaAI+rVUOawAAAABJRU5ErkJggg==",
                 },
+                Target {
+                    id: "demo-target-html",
+                    provider: "Demo Plugin",
+                    formats: vec!["html", "text"],
+                    title: "Demo Target 3 (HTML)",
+                    description: "Saves rich text as an HTML file and opens it",
+                    image: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                },
+                Target {
+                    id: "demo-target-files",
+                    provider: "Demo Plugin",
+                    formats: vec!["files"],
+                    title: "Demo Target 4 (Files)",
+                    description: "Logs the received file paths to stderr",
+                    image: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8v59hPwAEaAI+rVUOawAAAABJRU5ErkJggg==",
+                },
             ],
         })
         .unwrap(),
@@ -164,8 +180,8 @@ fn handle(request: Request) -> serde_json::Value {
                 eprintln!("[demo] {} → target={} format={} content={:?}", config.greeting, target_id, format, &content[..content.len().min(80)]);
             }
 
-            if format == "image" {
-                match save_and_open_image(&content) {
+            match format.as_str() {
+                "image" => match save_and_open_image(&content) {
                     Ok(path) => {
                         eprintln!("[demo] image saved and opened: {path}");
                         serde_json::to_value(SendResponse { success: true, error: None }).unwrap()
@@ -173,9 +189,24 @@ fn handle(request: Request) -> serde_json::Value {
                     Err(e) => {
                         serde_json::to_value(SendResponse { success: false, error: Some(e) }).unwrap()
                     }
+                },
+                "html" => match save_and_open_html(&content) {
+                    Ok(path) => {
+                        eprintln!("[demo] html saved and opened: {path}");
+                        serde_json::to_value(SendResponse { success: true, error: None }).unwrap()
+                    }
+                    Err(e) => {
+                        serde_json::to_value(SendResponse { success: false, error: Some(e) }).unwrap()
+                    }
+                },
+                "files" => {
+                    // The host newline-joins multiple file paths into a single content string.
+                    for path in content.lines() {
+                        eprintln!("[demo] received file: {path}");
+                    }
+                    serde_json::to_value(SendResponse { success: true, error: None }).unwrap()
                 }
-            } else {
-                serde_json::to_value(SendResponse { success: true, error: None }).unwrap()
+                _ => serde_json::to_value(SendResponse { success: true, error: None }).unwrap(),
             }
         }
     }
@@ -208,6 +239,33 @@ fn save_and_open_image(base64_data: &str) -> Result<String, String> {
         .arg(&path_str)
         .spawn()
         .map_err(|e| format!("Failed to open image: {e}"))?;
+
+    Ok(path_str)
+}
+
+fn save_and_open_html(html: &str) -> Result<String, String> {
+    let path = std::env::temp_dir().join("clipygo-demo.html");
+    std::fs::write(&path, html).map_err(|e| format!("Failed to write html: {e}"))?;
+
+    let path_str = path.to_string_lossy().to_string();
+
+    #[cfg(target_os = "windows")]
+    Command::new("cmd")
+        .args(["/c", "start", "", &path_str])
+        .spawn()
+        .map_err(|e| format!("Failed to open html: {e}"))?;
+
+    #[cfg(target_os = "macos")]
+    Command::new("open")
+        .arg(&path_str)
+        .spawn()
+        .map_err(|e| format!("Failed to open html: {e}"))?;
+
+    #[cfg(target_os = "linux")]
+    Command::new("xdg-open")
+        .arg(&path_str)
+        .spawn()
+        .map_err(|e| format!("Failed to open html: {e}"))?;
 
     Ok(path_str)
 }
@@ -248,13 +306,15 @@ mod tests {
     }
 
     #[test]
-    fn get_targets_returns_two_targets() {
+    fn get_targets_returns_four_targets() {
         let resp = handle(Request::GetTargets);
         let targets = resp["targets"].as_array().expect("targets must be array");
-        assert_eq!(targets.len(), 2);
+        assert_eq!(targets.len(), 4);
         assert_eq!(targets[0]["id"], "demo-target-1");
         assert_eq!(targets[1]["id"], "demo-target-2");
-        for t in targets {
+        assert_eq!(targets[2]["id"], "demo-target-html");
+        assert_eq!(targets[3]["id"], "demo-target-files");
+        for t in &targets[0..2] {
             assert!(t["formats"]
                 .as_array()
                 .unwrap()
@@ -265,6 +325,37 @@ mod tests {
             .as_array()
             .unwrap()
             .contains(&serde_json::json!("image")));
+        // Target 3 supports html
+        assert!(targets[2]["formats"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("html")));
+        // Target 4 supports files
+        assert!(targets[3]["formats"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("files")));
+    }
+
+    #[test]
+    fn send_html_to_target_returns_success() {
+        let resp = handle(Request::Send {
+            target_id: "demo-target-html".to_string(),
+            content: "<p>hello</p>".to_string(),
+            format: "html".to_string(),
+        });
+        assert_eq!(resp["success"], true);
+    }
+
+    #[test]
+    fn send_files_to_target_returns_success() {
+        let resp = handle(Request::Send {
+            target_id: "demo-target-files".to_string(),
+            content: "C:\\a.txt\nC:\\b.txt".to_string(),
+            format: "files".to_string(),
+        });
+        assert_eq!(resp["success"], true);
+        assert!(resp.get("error").is_none());
     }
 
     #[test]
